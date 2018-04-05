@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27130.2027
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "HList", "HList\HList.fsproj", "{21A7F3C7-3BD9-46EB-8A7B-F21D8A5040C8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{21A7F3C7-3BD9-46EB-8A7B-F21D8A5040C8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21A7F3C7-3BD9-46EB-8A7B-F21D8A5040C8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21A7F3C7-3BD9-46EB-8A7B-F21D8A5040C8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21A7F3C7-3BD9-46EB-8A7B-F21D8A5040C8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {EB013186-047A-47B7-A16F-F9B2CA738BE9}
+	EndGlobalSection
+EndGlobal
