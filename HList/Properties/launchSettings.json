@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "HList": {
+      "commandName": "Project",
+      "commandLineArgs": "c:/Users/Remco/test.csv 'order_id < 100'"
+    }
+  }
+}
