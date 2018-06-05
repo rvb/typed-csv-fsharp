@@ -1,0 +1,3 @@
+cssFiles: ['style.css']
+css: ''
+remarkConfig: {'highlightStyle': 'rainbow', 'highlightLanguage': 'fsharp'}

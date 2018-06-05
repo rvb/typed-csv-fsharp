@@ -1,0 +1,676 @@
+class: middle, center
+
+#Type-safe CSV parsing using HLists
+---
+
+# The problem
+
+- Given a CSV
+
+```
+order_id[int],product[string],price[float],executed[bool]
+1,"VOD.L",40,true
+2,"MSFT.O",40,false
+```
+
+- Header contains type information
+- Data should be validated against the header
+
+---
+
+# Querying
+
+- Can run queries with:
+  - Comparisons: order_id=3, executed=true
+  - And: order_id=3 && executed=true
+  - Or: order_id=3 || executed=false
+
+---
+
+# Type-safe?
+
+- We want to guarantee
+  - Given a header, a row of the CSV should have columns with the correct types
+  - Given a header, a query against the CSV should only use columns that exist in the header, with the correct types
+
+---
+
+# Tying schemas to rows
+
+- We want to type valid rows based on a schema
+
+- Conceptually, we have
+
+```
+val parseRow (schema: Schema) -> string -> (CSVRow schema) option
+```
+
+- This is a dependent type, so not representable in F#
+
+---
+
+# Passing information at the type level
+
+- We need a way to pass information between the schema's type and the row or query types
+
+- Generics give us type variables
+
+- Type variables scope over the entire function type
+
+- Pass information via the type variable
+
+---
+
+# The plan
+
+- We'll write
+
+```
+val parseRow :
+  'a CSVSchema -> string -> 'a CSVRow option
+val parseQuery :
+  'a CSVSchema -> string -> CSVQuery<'a, 'result> option
+val runQuery :
+  CSVQuery<'a,'result> -> 'a CSVRow -> 'result
+```
+
+- All important information about the schema must be encoded in the type variable 'a
+
+---
+
+# Schemas
+
+- A schema is a list of columns
+  - Each has a name
+  - Each has a type
+- The most important information is the type of the columns
+- Use the type parameter 'a to encode the column types
+
+---
+
+# HLists
+
+- An H(eterogenous) List is a list with column types as a type parameter
+- Type parameter 'a encodes a list of types as:
+  - unit is the empty list
+  - 'b -> 'c is "'b followed by 'c"
+
+- Use the same idea for schemas
+
+---
+
+# 'a CSVSchema
+
+- In pseudo-F#, 'a CSVSchema is a GADT:
+
+```
+type CSVSchema<'a> =
+  | SNil of Teq<'a, unit>
+  | SInt of string*Teq<'a, int -> 'c>*CSVSchema<'c>
+  | SFloat of string*Teq<'a, float -> 'c>*CSVSchema<'c>
+  | SString of string*Teq<'a, string -> 'c>*CSVSchema<'c>
+  | SBool of string*Teq<'a, bool -> 'c>*CSVSchema<'c>
+```
+
+- Separate constructors allow pattern-matching to indicate the first column's type
+
+- Non-nil constructors introduce type parameter 'c, so need crates
+
+---
+
+# 'a CSVSchema
+
+```
+type 'a CSVSchema =
+  | SNil of Teq<'a, unit>
+  | SInt of string*SchemaCrate<'a, int>
+  | SFloat of string*SchemaCrate<'a, float>
+  | SString of string*SchemaCrate<'a, string>
+  | SBool of string*SchemaCrate<'a, bool>
+and SchemaCrate<'a, 'b> =
+  abstract member Apply<'r> :
+    SchemaCrateEvaluator<'a, 'b, 'r> -> 'r
+and SchemaCrateEvaluator<'a, 'b, 'r> =
+  abstract member Eval<'c> :
+    Teq<'a, 'b -> 'c> -> CSVSchema<'c> -> 'r
+```
+
+---
+
+# Rows
+
+- Now that we have schemas, what is the type of a row corresponding to a 'a CSVSchema?
+- Since 'a encodes the column types, 'a CSVRow contains those types
+
+---
+
+# Rows
+
+- Rows are a regular 'a HList:
+
+```
+type HList<'a> =
+  | Nil of Teq<'a, unit>
+  | Cons of ConsCrate<'a>
+and ConsCrate<'a> =
+  abstract member Apply:
+    ConsCrateEvaluator<'a, 'r> -> 'r
+and ConsCrateEvaluator<'a, 'r> =
+  abstract member Eval<'b, 'c> :
+    Teq<'a, 'b -> 'c> -> 'b -> HList<'c> -> 'r
+```
+
+---
+
+# Querying
+
+- Queries may be variables, constants or various operators
+- The query type should encode:
+  - The column types of the schema the query applies to
+  - The type of the value returned by the query
+- Query<'a,'r> is a typed query against a 'a CSVRow, returning a 'r
+
+---
+
+# Constants
+
+- A constant of type 'r is a Query<'a,'r>
+
+```
+type Query<'a, 'r> =
+  | ...
+  | Const of 'r
+  | ...
+```
+
+---
+
+# Variables
+
+- We want to ensure all queries are well-typed, i.e. all variables exist at the correct type.
+- Every well-typed variable has an associated Getter<'a,'r>:
+```
+type Getter<'a,'r> = HList<'a> -> 'r
+```
+
+- Cannot guarantee that every Getter represents a variable (e.g. \_ -> 1)
+- However, every getter that does refer to a column in the HList must be of the right type
+
+---
+
+# Variables
+
+```
+type Getter<'a, 'b> = HList<'a> -> 'b
+
+type Query<'a, 'r> =
+  ...
+  | Var of Getter<'a,'r>
+  ...
+```
+
+- Column names do not appear in Query<'a,'r>s
+
+---
+
+# Operators
+
+- Queries support a number of operators:
+  - ||, &&
+  - =, <, >
+- Each operator has its own constructor
+
+---
+
+# Boolean operators
+
+- Boolean operators are represented as GADT constructors
+
+```
+type Query<'a, 'r> =
+  ...
+  | Or of Teq<'r,bool>*Query<'a,bool>*Query<'a,bool>
+  | And of Teq<'r,bool>*Query<'a,bool>*Query<'a,bool>
+  ...
+```
+
+---
+
+# Comparison operators
+
+- Generic in the argument type, as long as it's comparable
+
+- In pseudo-F#:
+```
+type Query<'a,'r> =
+  ...
+  | Less of Teq<'r,bool>*Query<'a,'b>*Query<'a,'b>
+  | Greater of Teq<'r,bool>*Query<'a,'b>*Query<'a,'b>
+  | Eq of Teq<'r,bool>*Query<'a,'b>*Query<'a,'b>
+  ...
+```
+
+- 'b is existentially quantified over comparable types
+
+---
+
+# Comparison operators
+
+
+```
+type Query<'a, 'r> =
+	...
+  | Less of Teq<'r,bool>*QueryPairCrate<'a>
+  | Greater of Teq<'r,bool>*QueryPairCrate<'a>
+  | Eq of Teq<'r,bool>*QueryPairCrate<'a>
+  ...
+and QueryPairCrate<'a> =
+  abstract member Apply :
+    QueryPairCrateEvaluator<'a,'r> -> 'r
+and QueryPairCrateEvaluator<'a,'r> =
+  abstract member Eval<'b when 'b : comparison> :
+    Query<'a,'b> -> Query<'a,'b> -> 'r
+```
+
+---
+
+# So far so good?
+
+- Strongly-typed domain model for schemas, rows and queries
+- Column types are guaranteed via type parameters
+- Queries have a strongly-typed return value
+- But.... we do not know the column types statically
+
+---
+
+# Crates to the rescue
+
+- We can't predict the schema's column types, but we know there will be some
+
+```
+val parse : string -> (exists a. 'a CSVSchema option)
+```
+
+- Wrap the schema in a crate
+
+---
+
+# SchemaCrate
+
+```
+type CSVSchemaCrate =
+  abstract member Apply<'r> : CSVSchemaEvaluator<'r> -> 'r
+and CSVSchemaEvaluator<'r> =
+  abstract member Eval<'a> : CSVSchema<'a> -> 'r
+
+val parse : string -> CSVSchemaCrate option
+```
+
+---
+
+# Parsing rows
+
+- In our app, we can now:
+  - Parse the schema
+  - If successful, enter the generic context of the schema crate
+  - Parse rows against this schema
+
+```
+val parser : 'a CSVSchema -> string -> 'a CSVRow option
+```
+
+---
+
+# Parsing rows
+
+```
+let rec parserInner<'a>
+  (schema: CSVSchema<'a>)
+  (parts: string list)
+  : CSVRow<'a> option =
+  let parseAndRecurse
+    (parser: string -> bool*'b)
+	(c: SchemaCrate<'a,'b>)
+	(p: string)
+	(ps: string list)
+	: CSVRow<'a> option =
+    let ok, v = parser p
+    if ok then
+      recurse v c ps
+    else
+      None
+  match schema, parts with
+  | SNil teq, [] ->
+    Some <| Teq.cast (Teq.sym <| Cong.hList teq) HList.empty
+  | SInt (_, c), p :: ps ->
+    parseAndRecurse Int32.TryParse c p ps
+  ...
+  | _, _ -> None
+```
+
+---
+
+# Parsing rows
+
+```
+let recurse
+  (v: 'b)
+  (c: SchemaCrate<'a, 'b>)
+  (ps: string list)
+  : CSVRow<'a> option =
+  c.Apply {new SchemaCrateEvaluator<_, _, _> with
+    member __.Eval<'c>
+	  (teq: Teq<'a, 'b -> 'c>)
+	  (tail: CSVSchema<'c>)
+	  : CSVRow<'a> option =
+      let recval = parserInner tail ps
+      recval
+      |> Option.map (fun t ->
+        let hlt =
+          teq
+          |> Teq.sym
+          |> Cong.hList
+        let res = HList.cons v t
+        Teq.cast hlt res)
+  }
+```
+
+---
+
+# Querying
+
+- The query is given by the user at runtime
+- We don't know if it's valid and need to check at runtime
+- Split the problem into halves:
+  - Parsing a string to an untyped query
+  - Type-checking a query against a schema
+
+---
+
+# Untyped queries
+
+```
+type UntypedQuery =
+  | UVar of string
+  | UConst of string
+  | ULess of UntypedQuery*UntypedQuery
+  | UGreater of UntypedQuery*UntypedQuery
+  | UEq of UntypedQuery*UntypedQuery
+  | UOr of UntypedQuery*UntypedQuery
+  | UAnd of UntypedQuery*UntypedQuery
+```
+
+- Parsed with FParsec
+
+---
+
+# Type checking
+
+- To check a query against a schema, we need to know the column names and types
+- Could extract these from the 'a CSVSchema directly, but it's pretty messy
+- Use an intermediate type representing column names and types
+
+```
+type 'a Getters =
+  {
+      Ints: Map<string, Getter<'a,int>>
+      Floats: Map<string, Getter<'a,float>>
+      Bools: Map<string, Getter<'a,bool>>
+      Strings: Map<string, Getter<'a,string>>
+  }
+```
+
+- Compute the getters from the schema in 1 pass through the HList
+- Use the getters for type checking
+
+---
+
+# Computing Getters
+
+```
+let getters<'a> (schema: CSVSchema<'a>) : Getters<'a> =
+  match schema with
+  | SNil _ ->
+    {
+      Ints = Map.empty
+      Floats = Map.empty
+      Bools = Map.empty
+      Strings = Map.empty
+    }
+  | SInt (n, c) ->
+    recurse (fun here there ->
+	  {there with Ints = Map.add n here there.Ints}) c
+  | ...
+```
+
+---
+
+# Computing Getters
+```
+let rec private recurse<'a, 'b>
+  (adder: (HList<'a> -> 'b) -> Getters<'a> -> Getters<'a>)
+  (c: SchemaCrate<'a,'b>) =
+  c.Apply { new SchemaCrateEvaluator<'a, 'b, Getters<'a>> with
+    member __.Eval<'c> teq (tail: CSVSchema<'c>) : Getters<'a> =
+      let here (hl: HList<'a>) =
+        Teq.cast (Cong.hList teq) hl
+        |> HList.head
+      let there : Getters<'a> =
+        getters tail
+        |> lift
+        |> Teq.cast (teq |> congGetter |> Teq.sym)
+      adder here there
+  }
+```
+
+---
+
+# Type checking
+
+- We don't know a-priori what type the query will be
+- Could request a type explicitly, but variables and constants may be any type
+- Treat them as existentials instead
+
+```
+type QueryCrate<'a> =
+  abstract member Apply:
+    QueryCrateEvaluator<'a,'r> -> 'r
+and QueryCrateEvaluator<'a,'r> =
+  abstract member Eval<'b when 'b : comparison> :
+    Query<'a,'b> -> 'r
+
+val typecheck:
+  'a Getters -> UntypedQuery -> Result<'a QueryCrate, string>
+```
+
+---
+
+# Type checking constants
+
+- For constants, try to parse the string, pick whichever type succeeds
+
+```
+| UConst s ->
+  let quotedString (s: string) =
+    if s.StartsWith("\"") && s.EndsWith("\"") then
+      true, s.Substring(1, s.Length - 2)
+    else
+      false, ""
+  [
+    maybe Int32.TryParse s |> Option.map (Const >> crate)
+    maybe Double.TryParse s |> Option.map (Const >> crate)
+    maybe Boolean.TryParse s |> Option.map (Const >> crate)
+    maybe quotedString s |> Option.map (Const >> crate)
+  ]
+  |> List.tryPick id
+  |> fun maybeC ->
+    match maybeC with
+    | None ->
+	  Result.Error (sprintf "Could not parse constant %s" s)
+    | Some c ->
+	  Result.Ok c
+```
+
+---
+
+# Type checking variables
+
+- For variables, try each type in the getters, return the first to succeed
+
+```
+| UVar n ->
+  [
+    Map.tryFind n getters.Ints |> Option.map wrap
+    Map.tryFind n getters.Floats |> Option.map wrap
+    Map.tryFind n getters.Bools |> Option.map wrap
+    Map.tryFind n getters.Strings |> Option.map wrap
+  ]
+  |> List.tryPick id
+  |> fun maybeV ->
+    match maybeV with
+    | None -> Result.Error (sprintf "Unbound variable %s" n)
+    | Some v -> Result.Ok v
+```
+
+---
+
+# Type checking operators
+
+- Each operator requires both sides to return the same type
+- To validate that,
+  - Type-check both sides
+  - Hop inside both crates
+  - Reflectively check types
+
+```
+(typecheck getters lhs, typecheck getters rhs)
+||> Result.zip
+|> Result.bind (fun (lCrate, rCrate) ->
+  lCrate.Apply { new QueryCrateEvaluator<'a, _> with
+    member __.Eval<'l when 'l : comparison> (qA: Query<'a,'l>) =
+      rCrate.Apply { new QueryCrateEvaluator<'a, _> with
+        member __.Eval<'r when 'r : comparison>
+		  (qB: Query<'a,'r>) =
+          if not <| typeof<'l>.Equals(typeof<'r>) then
+		    //Helpful error message
+			...
+            |> Result.Error
+          else
+            ....
+      }
+  })
+```
+
+---
+
+# Type checking operators
+
+- When we return a result, we dynamically know 'l = 'r
+- The compiler does not know
+- Construct a Teq at runtime, then do type-safe casts
+- Wrapped up in an unsafe helper
+
+```
+let private assertSubExprs<'a,'b,'l,'r>
+  (cnstrctr: Query<'a,'l> -> Query<'a,'l> -> Query<'a,'b> Error)
+  (a: Query<'a,'l>)
+  (b: Query<'a,'r>)
+  : Query<'a,'b> Error =
+  let teqB: Teq<'r,'l> = Teq.refl<'l> |> unbox
+  let qtB = Query.cong teqB
+  cnstrctr a (Teq.cast qtB b)
+```
+
+---
+
+# Type checking operators
+
+- Constructor functions for operators act on Query<'a,'b>, for any 'b
+
+```
+type private OpConstructor<'a,'c> =
+  abstract member Apply<'b when 'b : comparison> :
+    Query<'a,'b> -> Query<'a,'b> -> Query<'a,'c> Error
+val checkOp :
+  OpConstructor<'a,'c> ->
+  'a Getters ->
+  UntypedQuery ->
+  UntypedQuery ->
+  Query<'a,'c> Error
+```
+
+- checkOp handles
+  - Recursively type-checking lhs and rhs
+  - Checking their types agree
+  - Calling assertSubExprs
+
+---
+
+# Type checking comparisons
+
+- Comparisons are checked by checkOp:
+
+```
+| UEq (a, b) ->
+  let cons =
+    { new OpConstructor<'a,bool> with
+      member __.Apply<'b when 'b : comparison>
+	    (l: Query<'a,'b>)
+		r =
+        Eq (Teq.refl, QueryPairCrate.make l r) |> Result.Ok
+    }
+  checkOp cons getters a b
+  |> Result.map crate
+```
+
+---
+
+# Type-checking boolean operators
+
+- Boolean operators require each side to be bool-valued
+- Runtime type-check inside OpConstructor
+
+```
+| UOr(a, b) ->
+  let cons =
+    { new OpConstructor<'a,bool> with
+      member __.Apply<'b when 'b : comparison>
+	    (l : Query<'a,'b>)
+		r =
+        if typeof<'b>.Equals(typeof<bool>) then
+          Or (Teq.refl, unbox l, unbox r)
+          |> Result.Ok
+        else
+          //Helpful message
+		  ...
+          |> Result.Error
+    }
+  checkOp cons getters a b
+  |> Result.map crate
+```
+
+---
+
+# Putting it all together
+
+- Main entry point will
+  - Parse the schema and query
+  - Typecheck the query
+  - Check its return value is bool
+  - Parse each line and print the matches
+
+---
+
+class: middle, center
+
+# Demo
+
+---
+
+# Conclusions
+
+- GADTs get us more type-safety
+- But....
+  - No way to tie column names in schema to column names in queries
+  - Need a bunch of runtime type checks
+  - Lots and lots of boilerplate in F#
