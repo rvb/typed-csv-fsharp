@@ -3,8 +3,7 @@
 open System
 open System.Text.RegularExpressions
 
-//Step 0: Some actual parsing meh-ness.
-type Parser<'a> = string -> 'a option
+type 'a Parser = string -> 'a option
 
 //So.. can we write strongly-typed versions of the usual CSV stuff?
 //My answer: Maybe.
@@ -12,7 +11,7 @@ type Parser<'a> = string -> 'a option
 //The crate here is mainly to wrap up that 'a = 'c -> 'b, and we have a 'b Schema.
 //Furthermore, by fixing the 'c in each constructor, we can 'peel off' a single layer at a time,
 //using the Teq to retrieve its type.
-type CSVSchema<'a> =
+type 'a CSVSchema =
     | SNil of Teq<'a, unit>
     | SInt of string*SchemaCrate<'a, int>
     | SFloat of string*SchemaCrate<'a, float>
@@ -86,9 +85,7 @@ module CSVSchema =
         |> List.ofArray
         |> parserInner
 
-//Next step: Can we tie a csv 'row' to a Schema?
-//Well, yes, at least in the sense that the types line up:
-type CSVRow<'a> = HList<'a>
+type 'a CSVRow = 'a HList
 
 module Parsing =
     let rec parserInner<'a> (schema: CSVSchema<'a>) (parts: string list): CSVRow<'a> option =
@@ -123,18 +120,16 @@ module Parsing =
         | SString (_, c), p :: ps ->
             let m = Regex.Match(p,@"\s*[""](?<content>[^""]*)[""]\s*")
             parseAndRecurse (fun _ -> m.Success, if m.Success then m.Groups.["content"].Value else "") c p ps
-        | _, _ -> failwith "Write me"
+        | _, _ -> None
 
-    //So.. we have a type-safe parser, namely the below:
-    //This guy's guaranteed to produce a row that matches the schema, no silly 'obj' nonsense in sight.
-    let parser (schema: CSVSchema<'a>) (input: string): CSVRow<'a> option =
+    let parser (schema: 'a CSVSchema) (input: string): 'a CSVRow option =
         input.Split(',')
         |> List.ofArray
         |> parserInner schema
 
 type Getter<'a, 'b> = HList<'a> -> 'b
 
-type Getters<'a> =
+type 'a Getters =
     {
         Ints: Map<string, Getter<'a,int>>
         Floats: Map<string, Getter<'a,float>>

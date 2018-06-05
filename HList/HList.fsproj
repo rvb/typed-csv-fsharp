@@ -10,7 +10,12 @@
     <Compile Include="HList.fs" /> 
     <Compile Include="CsvDomain.fs" />
     <Compile Include="Query.fs" />
+    <Compile Include="QueryParsing.fs" />
     <Compile Include="App.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FParsec" Version="1.0.3" />
   </ItemGroup>
 
 </Project>

@@ -1,10 +1,8 @@
 namespace HList
 
-//The idea here is to have hlists, using MattWK's trick of using 'a -> 'b
-// 'start with a 'a'.
 type HList<'a> =
-    | Nil of Teq<'a, unit> //Use the GADT trick to vary 'a across constructors.
-    | Cons of ConsCrate<'a> //Needs crates, as there is SOME 'b and 'c such that...
+    | Nil of Teq<'a, unit>
+    | Cons of ConsCrate<'a>
 and ConsCrate<'a> =
     abstract member Apply: ConsCrateEvaluator<'a, 'r> -> 'r
 and ConsCrateEvaluator<'a, 'r> =
@@ -15,13 +13,13 @@ module Cong =
         box t |> unbox
 
     let hList (t: Teq<'a, 'b>) : Teq<HList<'a>, HList<'b>> =
-        really_believe_me (Teq.refl: Teq<HList<'a>,HList<'a>>)
+        really_believe_me Teq.refl<HList<'a>>
 
     let domain (t: Teq<'a -> 'b, 'c -> 'd>): Teq<'a, 'c> =
-        really_believe_me (Teq.refl: Teq<'a,'a>)
+        really_believe_me Teq.refl<'a>
 
     let codomain (t: Teq<'a -> 'b, 'c -> 'd>): Teq<'b, 'd> =
-        really_believe_me (Teq.refl: Teq<'b, 'b>)
+        really_believe_me Teq.refl<'b>
 
 
 module HList =
