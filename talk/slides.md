@@ -194,7 +194,6 @@ type Getter<'a,'r> = HList<'a> -> 'r
 ```
 
 - Cannot guarantee that every Getter represents a variable (e.g. \_ -> 1)
-- However, every getter that does refer to a column in the HList must be of the right type
 
 ---
 
